@@ -1,0 +1,14 @@
+name: TES-main
+version: 0.0.1
+main: folosuru\TES\Main
+api: 4.0.8
+src-namespace-prefix: folosuru\TES
+commands:
+  test:
+    description: Example command
+    usage: "/test"
+    permission: TES.command.test
+permissions:
+  TES.command.test:
+    description: "Allows the user to run the example command"
+    default: true

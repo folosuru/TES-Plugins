@@ -1,0 +1,108 @@
+PlayerData.php
+
+    CheckExitCurrency()
+        指定された通貨がArrayに無いとエラー吐きそうだから、無かったら0で設定する関数。
+
+
+
+	public function onCommand(CommandSender $sender, Command $command, string $label, array $args) : bool{
+		switch($command->getName()){
+			case "country":
+				switch ($args[0]){
+
+					case "create":
+						if (!$this->PlayerData->getCountry()){
+							if ($args[1]){	/** ""、"0"、"false"等の型変換でFalseになる文字は弾く **/
+								if ($this->CountryData->existCountry($args[1])){
+									$this->CountryData->makeCountry($args[1]);
+									$sender->sendMessage("Made Country.");
+								}else{
+									$sender->sendMessage("This name has already used.");
+								}
+							}else{
+								$sender->sendMessage("This name can not use");
+							}
+						}else{
+							$sender->sendMessage("You already joined country");
+						}
+						return true;
+					case "manage":
+						return true;
+				}
+				return true;
+			default:
+				throw new \Exception('Unexpected value');
+		}
+	}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"CountryData"=>[
+    "country_name"=>[
+        "currency"=>"hogehoge"
+        "dominion_count"=>256
+        ...
+    ]
+
+]
+
+
+"CurrencyData" => [
+    "currency_name" => [
+        hogehoge
+
+    ]
+
+]
+
+
+
+
+
+PlayerData
+
+"hoge"=>"fuga"
+"country"=>"MyCountry"
+"money"=>[
+    "ACP"=>10,
+    "JPY"=>5000000000000000,
+]
+
+
+10分おきくらいでDBと同期したいんだけどどう？
+
+
+
+
+・プレイヤーは国家に所属する（もしくはしない）ことができる
+
+・国家は、領土と国民を持つ
+
+・領土は、領土の予定場所で宣言し、一定時間内に反対がなかった場合承認される TODO: もう少しスマートに
+    ・宣言には、レッドストーン等の資材を消費する。
+
+    ・要は、使っている人が多い場所を占領されたくない。
+
+     （・通行するプレイヤー数などから「地価」を算出する…？）
+
+（普段使っている場所を第三者に占拠されないために、領土宣言を乱立させない。）
+    ・領土の増加とともに要求資材を増加させる
+
+
+
+・領土には通常の領土と道がある
+    ・道は規定ゆるめでいいと思う
+
+    ・道には公共福祉という目的があるので、存在することによって国民が（あるいは国民以外も）利益を得るようにする
+

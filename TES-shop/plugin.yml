@@ -1,0 +1,8 @@
+---
+name: TES-shop
+version: 0.0.1
+main: folosuru\TES_shop\Main
+api: 4.1.0
+src-namespace-prefix: folosuru\TES_shop
+depend:
+  - TES-main
