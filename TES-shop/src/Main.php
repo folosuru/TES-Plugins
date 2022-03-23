@@ -103,7 +103,7 @@ class Main extends PluginBase implements Listener {
 					return;
 				}
 				if ($event->getAction() == 0) return;
-				$storage =  $this->itemstorage->GetStorage($shop["owner"]);
+				$storage =  $this->itemstorage->getStorage($shop["owner"]);
 				$item = new Item(new ItemIdentifier($shop["id"],$shop["meta"]));
 				$item->setCount($shop["amount"]);
 				if  (!$storage->canRemoveItem($item)){
