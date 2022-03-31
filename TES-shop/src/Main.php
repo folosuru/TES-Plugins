@@ -19,6 +19,7 @@ use bbo51dog\bboform\form\SimpleForm;
 use pocketmine\block\BaseSign;
 use pocketmine\block\Block;
 use pocketmine\block\utils\SignText;
+use pocketmine\event\block\BlockBreakEvent;
 use pocketmine\event\block\SignChangeEvent;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerInteractEvent;
@@ -26,6 +27,8 @@ use pocketmine\item\Item;
 use pocketmine\item\ItemIdentifier;
 use pocketmine\player\Player;
 use pocketmine\plugin\PluginBase;
+use pocketmine\scheduler\Task;
+use pocketmine\Server;
 use pocketmine\utils\TextFormat;
 use SQLite3;
 
@@ -33,7 +36,8 @@ use SQLite3;
 class Main extends PluginBase implements Listener {
 
 
-	private $shopdata;
+	private static  $instance;
+	public array $shopdata;
 	private $sqlite;
 	/**
 	 * @var \folosuru\item_storage\Main
@@ -45,22 +49,43 @@ class Main extends PluginBase implements Listener {
 	 */
 	private $TES_main;
 
+	/**
+	 * $shop
+	 *
+	 *
+	 */
+
+	public function onLoad(): void{
+		if(!self::$instance instanceof Main){
+			self::$instance = $this;
+		}
+	}
+
 	public function onEnable(): void{
 		$this->TES_main = TES\Main::getInstance();
 		$this->itemstorage = \folosuru\item_storage\Main::getInstance();
 		$this->getServer()->getPluginManager()->registerEvents($this,$this);
-		$this->sqlite = new SQLite3($this->getDataFolder().'shop.sqlite');
+		$server = $this->getServer();
+		$this->shopdata = array();
+		$this->getScheduler()->scheduleRepeatingTask(
+			new class($this->getDataFolder()) extends Task{
+				public function __construct(string $path){
+					$this->path = $path;
+					$this->server = Server::getInstance();
+				}
+
+				public function onRun(): void{
+					$this->server->getAsyncPool()->submitTask(new sqlLoadTask($this->path));
+				}
+			},12000);
 	}
 
 	public function onSignChange(SignChangeEvent $event){
-		$pos = $event->getBlock()->getPosition()->getFloorX()."-".$event->getBlock()->getPosition()->getFloorY()."-".$event->getBlock()->getPosition()->getFloorZ();
+		$pos = $event->getBlock()->getPosition()->getWorld()->getId().'_'.$event->getBlock()->getPosition()->getFloorX()."_".$event->getBlock()->getPosition()->getFloorY()."_".$event->getBlock()->getPosition()->getFloorZ();
 		if ($event->getNewText()->getLine(0) == "signshop"){
 
 			if (!is_numeric($amount = $event->getNewText()->getLine(1))){
 				if ($amount){ return; }else{ $amount = 1 ;}# 数字じゃなくて空文字でもない場合return、空文字なら1にする
-			}
-			if (!$this->TES_main->existCurrency($currency = $event->getNewText()->getLine(2))){
-				$currency = TextFormat::RED.$currency;
 			}
 
 			if (!is_numeric($price = $event->getNewText()->getLine(3))) {
@@ -73,38 +98,52 @@ class Main extends PluginBase implements Listener {
 				"amount" => $amount,
 				"currency" => $currency = $event->getNewText()->getLine(2),
 				"price" => $price,
-				"item" => "",
-				"meta" => "",
+				"item" => "0",
+				"meta" => "0",
 				"name" => "empty",
-				"existCurrency" => $this->TES_main->existCurrency($event->getNewText()->getLine(2)),
 				"isEnable" => true
 			);
 			$event->setNewText(new SignText([
-					"signshop",
-					"商品が設定されていません",
-					$event->getNewText()->getLine(1)."個",
-					$event->getNewText()->getLine(3)." ".$currency
+				"signshop",
+				"empty",
+				$event->getNewText()->getLine(1)."個",
+				$event->getNewText()->getLine(3)." ".$currency
 			]));
-			$task = new sqlWriteTask($this->sqlite,$pos,$this->shopdata[$pos]);
+			$task = new sqlWriteTask($this->getDataFolder(),$pos,$this->shopdata[$pos]);
 			$this->getServer()->getAsyncPool()->submitTask($task);
+		}
+	}
 
+	public function onBlockBreak(BlockBreakEvent $event){
+		ob_start();
+		var_dump($this->shopdata);
+		$str = ob_get_contents();//バッファの内容を取得
+		ob_end_clean();
+
+		//PHP スクリプトと同一ディレクトリに log.txt として出力
+		$fp = fopen(__DIR__ . "/log.txt", "a+");
+		fputs($fp, $str);
+		fclose($fp);
+		$pos = $event->getBlock()->getPosition()->getWorld()->getId().'_'.$event->getBlock()->getPosition()->getFloorX() . "_" . $event->getBlock()->getPosition()->getFloorY() . "_" . $event->getBlock()->getPosition()->getFloorZ();
+		if (isset($this->shopdata[$pos])) {
+			unset($this->shopdata[$pos]);
 		}
 	}
 
 	public function onBlockTouch(PlayerInteractEvent $event){
-		$pos = $event->getBlock()->getPosition()->getFloorX()."-".$event->getBlock()->getPosition()->getFloorY()."-".$event->getBlock()->getPosition()->getFloorZ();
+		$pos = $event->getBlock()->getPosition()->getWorld()->getId().'_'.$event->getBlock()->getPosition()->getFloorX()."_".$event->getBlock()->getPosition()->getFloorY()."_".$event->getBlock()->getPosition()->getFloorZ();
 		if (isset($this->shopdata[$pos])) {
 			$event->cancel();
 			$shop = $this->shopdata[$pos];
 			$player = $event->getPlayer();
 			if ($player->getName() != $shop["Owner"]) {
-				if ($shop["item"] === "商品が設定されていません" or $this->TES_main->existCurrency($shop["currency"]) == false) {
+				if ($shop["item"] === "-" or $this->TES_main->existCurrency($shop["currency"]) == false) {
 					$player->sendMessage("このSHOPはまだ準備中です。");
 					return;
 				}
 				if ($event->getAction() == 0) return;
-				$storage =  $this->itemstorage->getStorage($shop["owner"]);
-				$item = new Item(new ItemIdentifier($shop["id"],$shop["meta"]));
+				$storage =  $this->itemstorage->GetStorage($shop["owner"]);
+				$item = new Item(new ItemIdentifier( (int) $shop["id"], (int) $shop["meta"]));
 				$item->setCount($shop["amount"]);
 				if  (!$storage->canRemoveItem($item)){
 					$player->sendMessage("在庫がありません");
@@ -162,14 +201,14 @@ class Main extends PluginBase implements Listener {
 						}
 						$this->editshop($event->getBlock(),$shop);
 					}))
-					->setTitle("Setting")
-					->addElements(
-						new Label($shop["name"]),
-						$amount_input,
-						$currency_input,
-						$price_input,
-						$chkbox
-					);
+						->setTitle("Setting")
+						->addElements(
+							new Label($shop["name"]),
+							$amount_input,
+							$currency_input,
+							$price_input,
+							$chkbox
+						);
 					$event->getPlayer()->sendForm($form);
 				}
 			}
@@ -179,11 +218,9 @@ class Main extends PluginBase implements Listener {
 	}
 
 	private function editshop(Block $Block,array $shop) : void{
-		if ($this->TES_main->existCurrency($shop["currency"])) {
-			$currency = $shop["currency"];
-		}else{
-			$currency = TextFormat::RED.$shop["currency"];
-		}
+		$position = $Block->getPosition();
+		$currency = $shop["currency"];
+
 		$lines = [
 			"signshop",
 			$shop["name"],
@@ -191,12 +228,17 @@ class Main extends PluginBase implements Listener {
 			$shop["price"] . " " . $currency,
 		];
 		$Block->setText(new SignText($lines));
-		$position = $Block->getPosition();
 		$position->getWorld()->setBlockAt($position->x, $position->y, $position->z, $Block);
-		$this->shopdata[$position->getFloorX()."-". $position->getFloorY()."-".$position->getFloorZ()] = $shop;
-		$task = new sqlWriteTask($this->sqlite,$position->getFloorX()."-". $position->getFloorY()."-".$position->getFloorZ(),$shop);
+		if ($this->shopdata[$position->getWorld()->getId().'_'.$position->getFloorX()."_". $position->getFloorY()."_".$position->getFloorZ()] == $shop){
+			return;
+		}
+		$this->shopdata[$Block->getPosition()->getWorld()->getId().'_'.$position->getFloorX()."_". $position->getFloorY()."_".$position->getFloorZ()] = $shop;
+		$task = new sqlWriteTask($this->getDataFolder(),$Block->getPosition()->getWorld()->getId().'_'.$position->getFloorX()."_". $position->getFloorY()."_".$position->getFloorZ(),$shop);
 		$this->getServer()->getAsyncPool()->submitTask($task);
 	}
 
+	public static function getInstance() :Main{
+		return self::$instance;
+	}
 
 }
